@@ -194,6 +194,27 @@ func TestRepairFlow(t *testing.T) {
 	}
 	var withParts Estimate
 	customer.do("POST", "/api/estimate", map[string]any{"categoryId": ac, "hasParts": true, "location": Point{41.715, 44.80}}, http.StatusOK, &withParts)
+	var typical Estimate
+	anon := &client{t: t, base: customer.base}
+	anon.do("GET", fmt.Sprintf("/api/estimate/typical?category=%d", ac), nil, http.StatusOK, &typical)
+	if typical.Source != "rules" || typical.MinTetri <= 0 || typical.MaxTetri < typical.MinTetri {
+		t.Fatalf("bad typical estimate: %+v", typical)
+	}
+	anon.do("GET", "/api/estimate/typical?category=abc", nil, http.StatusBadRequest, nil)
+	var stats []categoryStat
+	anon.do("GET", "/api/stats/categories", nil, http.StatusOK, &stats)
+	if len(stats) == 0 {
+		t.Fatal("no category stats")
+	}
+	var recent []map[string]any
+	anon.do("GET", "/api/posts/recent", nil, http.StatusOK, &recent)
+	for _, p := range recent {
+		for _, k := range []string{"description", "address", "location", "contact", "customer"} {
+			if _, ok := p[k]; ok {
+				t.Fatalf("recent post leaks %q: %v", k, p)
+			}
+		}
+	}
 	if withParts.MaxTetri >= post.Estimate.MaxTetri {
 		t.Fatalf("having parts should lower the estimate: %+v vs %+v", withParts, post.Estimate)
 	}
